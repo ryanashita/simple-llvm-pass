@@ -3,6 +3,8 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 
@@ -10,8 +12,27 @@ namespace {
 
 struct SkeletonPass : public PassInfoMixin<SkeletonPass> {
     PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
-        for (auto &F : M) {
-            errs() << "I saw a function called " << F.getName() << "!\n";
+        for (auto &F : M.functions()) {
+            LLVMContext &Ctx = F.getContext();
+            std::vector<Type *> paramTypes = {Type::getInt32Ty(Ctx)};
+            Type *retType = Type::getVoidTy(Ctx);
+            FunctionType *logFuncType = FunctionType::get(retType, paramTypes, false);
+            FunctionCallee logFunc = 
+                F.getParent()->getOrInsertFunction("logop", logFuncType); 
+            
+            for (auto &B : F) {
+                for (auto &I : B) {
+                    if (auto *op = dyn_cast<BinaryOperator>(&I)) {
+                        IRBuilder<> builder(op);
+                        builder.SetInsertPoint(&B, ++builder.GetInsertPoint());
+
+                        Value* args[] = {op};
+                        builder.CreateCall(logFunc, args);
+
+                        return PreservedAnalyses::none();
+                    }
+                }
+            }
         }
         return PreservedAnalyses::all();
     };
